@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
+
+from devops_multiagent.diagnostician import diagnose
+from devops_multiagent.operator import operate
+
+
+def main() -> None:
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    parser = argparse.ArgumentParser(prog="devops-agent")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_diag = sub.add_parser("diagnose", help="Consulta de solo lectura (infra + RAG)")
+    p_diag.add_argument("message")
+
+    p_op = sub.add_parser("operate", help="Accion sobre infraestructura (gated)")
+    p_op.add_argument("message")
+    p_op.add_argument("--approve", action="store_true", help="Autoriza ejecutar tools de escritura")
+
+    args = parser.parse_args()
+
+    async def run() -> None:
+        if args.command == "diagnose":
+            result, registry = await diagnose(args.message)
+        else:
+            result, registry = await operate(args.message, approved=args.approve)
+
+        print(result.final_text)
+        print("\n--- tool calls ---")
+        for record in registry.trace:
+            estado = "ejecutado" if record.executed else "BLOQUEADO (sin aprobacion)"
+            print(f"{record.tool}({record.arguments}) -> {estado}")
+
+    asyncio.run(run())
+
+
+if __name__ == "__main__":
+    main()
