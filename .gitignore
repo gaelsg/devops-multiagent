@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Secretos
+.env
+
+# Estado runtime del watcher
+state/

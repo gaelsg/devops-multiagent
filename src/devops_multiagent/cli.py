@@ -6,6 +6,7 @@ import logging
 
 from devops_multiagent.diagnostician import diagnose
 from devops_multiagent.operator import operate
+from devops_multiagent.watcher import check_once
 
 
 def main() -> None:
@@ -20,19 +21,30 @@ def main() -> None:
     p_op.add_argument("message")
     p_op.add_argument("--approve", action="store_true", help="Autoriza ejecutar tools de escritura")
 
+    sub.add_parser("watch", help="Chequeo unico de estado (para systemd timer), notifica si hay cambios")
+
     args = parser.parse_args()
 
     async def run() -> None:
         if args.command == "diagnose":
             result, registry = await diagnose(args.message)
-        else:
+            print(result.final_text)
+            print("\n--- tool calls ---")
+            for record in registry.trace:
+                estado = "ejecutado" if record.executed else "BLOQUEADO (sin aprobacion)"
+                print(f"{record.tool}({record.arguments}) -> {estado}")
+        elif args.command == "operate":
             result, registry = await operate(args.message, approved=args.approve)
-
-        print(result.final_text)
-        print("\n--- tool calls ---")
-        for record in registry.trace:
-            estado = "ejecutado" if record.executed else "BLOQUEADO (sin aprobacion)"
-            print(f"{record.tool}({record.arguments}) -> {estado}")
+            print(result.final_text)
+            print("\n--- tool calls ---")
+            for record in registry.trace:
+                estado = "ejecutado" if record.executed else "BLOQUEADO (sin aprobacion)"
+                print(f"{record.tool}({record.arguments}) -> {estado}")
+        elif args.command == "watch":
+            changes = await check_once()
+            print(f"cambios detectados: {len(changes)}")
+            for change in changes:
+                print(f"  - {change}")
 
     asyncio.run(run())
 

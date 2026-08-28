@@ -1,0 +1,7 @@
+[Unit]
+Description=DevOps Multiagent Watcher - chequeo de infra + notificacion Telegram
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/devops-multiagent
+ExecStart=/usr/bin/uv run devops-agent watch

@@ -10,6 +10,7 @@ Fase 4 del roadmap de agentes, construido sobre [proxmox-mcp-server](https://git
 - **Cliente MCP real:** este proyecto no es un servidor MCP — es un *host/cliente* que habla el protocolo MCP contra `proxmox-mcp-server` y `rag-mcp-server` como subprocesos, usando el SDK oficial (`mcp.client.Client`).
 - **Diagnostician:** solo lectura. Las tools de escritura ni siquiera se le anuncian al modelo (filtradas en `ToolRegistry.connect`, no solo bloqueadas).
 - **Operator:** puede ejecutar `start_resource`/`stop_resource`/`restart_resource`, pero solo si `approved=True` se pasó explícitamente al invocarlo. Sin aprobación, el modelo puede intentar la llamada (se le anuncia la tool) pero el `ToolRegistry` la bloquea antes de tocar Proxmox — el guardrail vive en código, no en el criterio del modelo.
+- **Watcher:** chequeo determinista de estado (sin LLM) cada 15 min via systemd timer. Solo si detecta un cambio real (no en cada poll) manda una alerta cruda a Telegram y despues invoca al Diagnostician para dar contexto.
 
 ## Setup
 
@@ -18,6 +19,7 @@ Requiere `proxmox-mcp-server` y `rag-mcp-server` ya configurados (ver sus propio
 ```bash
 ollama pull qwen3:14b
 uv sync
+cp .env.example .env  # completar TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID si usas el watcher
 ```
 
 ## Uso
@@ -26,6 +28,21 @@ uv sync
 uv run devops-agent diagnose "cual es el estado del contenedor de nextcloud?"
 uv run devops-agent operate "reinicia el contenedor 100"              # queda bloqueado, sin --approve
 uv run devops-agent operate "reinicia el contenedor 100" --approve    # se ejecuta de verdad
+uv run devops-agent watch                                             # chequeo unico, notifica si hay cambios
+```
+
+## Watcher proactivo (systemd --user timer)
+
+```bash
+loginctl enable-linger $USER   # para que corra sin sesion activa
+mkdir -p ~/.config/systemd/user
+ln -sf ~/projects/devops-multiagent/systemd/devops-watcher.service ~/.config/systemd/user/
+ln -sf ~/projects/devops-multiagent/systemd/devops-watcher.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now devops-watcher.timer
+
+systemctl --user list-timers devops-watcher.timer     # ver proxima corrida
+journalctl --user -u devops-watcher.service -f         # seguir logs en vivo
 ```
 
 ## Evals

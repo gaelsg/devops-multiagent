@@ -86,6 +86,10 @@ class ToolRegistry:
         call_result = await client.call_tool(name, arguments)
         if call_result.structured_content is not None:
             value: Any = call_result.structured_content
+            # El SDK envuelve retornos no-objeto (ej. list[dict]) en {"result": ...}
+            # porque structured_content debe tener un objeto JSON en la raiz.
+            if isinstance(value, dict) and value.keys() == {"result"}:
+                value = value["result"]
         else:
             value = [block.text for block in call_result.content if hasattr(block, "text")]
 
