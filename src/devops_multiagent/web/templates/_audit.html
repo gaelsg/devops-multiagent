@@ -1,0 +1,21 @@
+{% if audit %}
+<table>
+  <thead>
+    <tr><th>Fecha (UTC)</th><th>Acción</th><th>Nodo</th><th>VMID</th><th>Tipo</th><th>Resultado</th></tr>
+  </thead>
+  <tbody>
+    {% for entry in audit %}
+    <tr>
+      <td>{{ entry.ts }}</td>
+      <td>{{ entry.action }}</td>
+      <td>{{ entry.node }}</td>
+      <td>{{ entry.vmid }}</td>
+      <td>{{ entry.resource_type }}</td>
+      <td>{{ entry.result }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">Sin acciones de escritura registradas todavía.</p>
+{% endif %}

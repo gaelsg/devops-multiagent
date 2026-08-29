@@ -11,6 +11,7 @@ Fase 4 del roadmap de agentes, construido sobre [proxmox-mcp-server](https://git
 - **Diagnostician:** solo lectura. Las tools de escritura ni siquiera se le anuncian al modelo (filtradas en `ToolRegistry.connect`, no solo bloqueadas).
 - **Operator:** puede ejecutar `start_resource`/`stop_resource`/`restart_resource`, pero solo si `approved=True` se pasó explícitamente al invocarlo. Sin aprobación, el modelo puede intentar la llamada (se le anuncia la tool) pero el `ToolRegistry` la bloquea antes de tocar Proxmox — el guardrail vive en código, no en el criterio del modelo.
 - **Watcher:** chequeo determinista de estado (sin LLM) cada 15 min via systemd timer. Solo si detecta un cambio real (no en cada poll) manda una alerta cruda a Telegram y despues invoca al Diagnostician para dar contexto.
+- **Dashboard:** FastAPI + htmx, solo localhost. Diagnostician con trace de tool-calls en vivo (SSE) + historial de auditoría. Ver sección propia más abajo.
 
 ## Setup
 
@@ -29,7 +30,19 @@ uv run devops-agent diagnose "cual es el estado del contenedor de nextcloud?"
 uv run devops-agent operate "reinicia el contenedor 100"              # queda bloqueado, sin --approve
 uv run devops-agent operate "reinicia el contenedor 100" --approve    # se ejecuta de verdad
 uv run devops-agent watch                                             # chequeo unico, notifica si hay cambios
+uv run devops-agent serve                                             # dashboard web, http://127.0.0.1:8000
 ```
+
+## Dashboard web
+
+FastAPI + htmx, sin build step ni frontend framework. Dos cosas:
+
+- **Diagnostician con trace en vivo:** el formulario dispara una conexión SSE (`htmx-ext-sse`) que va mostrando cada tool-call en cuanto se ejecuta, no solo la respuesta final — la misma info que hoy solo se ve al terminar en el CLI.
+- **Historial de auditoría:** lee directo `proxmox-mcp-server/docs/audit/actions.jsonl` (las acciones de escritura reales quedan ahí, ver ese repo) y se refresca cada 30s.
+
+Solo expone Diagnostician (solo lectura) — no hay panel de Operator todavía, decisión deliberada para no sumar un botón de "reiniciar" en una UI sin autenticación. Ver [decisión completa](docs/bitacora/2026-08-29-idea4.md).
+
+**Bind solo a `127.0.0.1`, a propósito.** No tiene login: el modelo de confianza es el mismo que correr el CLI a mano en la propia máquina. No exponer en LAN/Tailscale sin agregar auth antes.
 
 ## Watcher proactivo (systemd --user timer)
 

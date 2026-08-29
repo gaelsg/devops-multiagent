@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import requests
 
 from devops_multiagent.mcp_tools import ToolRegistry
+
+OnEvent = Callable[[dict[str, Any]], Awaitable[None]]
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 MODEL = os.environ.get("AGENT_MODEL", "qwen3:14b")
@@ -30,7 +32,16 @@ def _chat(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[s
     return resp.json()["message"]
 
 
-async def run_agent(system_prompt: str, user_message: str, registry: ToolRegistry) -> AgentResult:
+async def run_agent(
+    system_prompt: str,
+    user_message: str,
+    registry: ToolRegistry,
+    on_event: OnEvent | None = None,
+) -> AgentResult:
+    """`on_event`, si se pasa, se invoca despues de cada tool-call real con
+    {"type": "tool_call", "tool": ..., "arguments": ..., "result": ...} -
+    permite a un consumidor (ej. el dashboard web via SSE) mostrar el trace
+    en vivo sin acoplar este modulo a como se sirve esa UI."""
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message},
@@ -51,6 +62,10 @@ async def run_agent(system_prompt: str, user_message: str, registry: ToolRegistr
         for call in tool_calls:
             fn = call["function"]
             result = await registry.call(fn["name"], fn["arguments"])
+            if on_event is not None:
+                await on_event(
+                    {"type": "tool_call", "tool": fn["name"], "arguments": fn["arguments"], "result": result}
+                )
             messages.append(
                 {
                     "role": "tool",

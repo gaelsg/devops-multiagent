@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>devops-multiagent · dashboard</title>
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: #0f1115; color: #d7dbe0; max-width: 880px;
+    margin: 2rem auto; padding: 0 1rem; line-height: 1.5;
+  }
+  h1 { font-size: 1.1rem; color: #7ee787; margin-bottom: 0; }
+  .sub { color: #6e7681; font-size: 0.85rem; margin-top: 0.2rem; }
+  section { margin-top: 2rem; }
+  h2 { font-size: 0.95rem; color: #d7dbe0; border-bottom: 1px solid #262b33; padding-bottom: 0.4rem; }
+  form { display: flex; gap: 0.5rem; }
+  input[type=text] {
+    flex: 1; background: #161b22; border: 1px solid #30363d; color: #d7dbe0;
+    padding: 0.5rem 0.7rem; border-radius: 4px; font-family: inherit; font-size: 0.9rem;
+  }
+  button {
+    background: #238636; color: white; border: none; border-radius: 4px;
+    padding: 0.5rem 1rem; cursor: pointer; font-family: inherit; font-size: 0.9rem;
+  }
+  button:hover { background: #2ea043; }
+  #trace-wrap { margin-top: 1rem; min-height: 2rem; }
+  .event { border-left: 2px solid #30363d; padding: 0.4rem 0.7rem; margin-bottom: 0.4rem; font-size: 0.85rem; }
+  .event.tool-call { border-left-color: #58a6ff; }
+  .event .tool-name { color: #58a6ff; font-weight: bold; }
+  .event .args { color: #6e7681; }
+  .event .badge { float: right; font-size: 0.75rem; color: #7ee787; }
+  .final { border-left: 2px solid #7ee787; padding: 0.6rem 0.8rem; margin-top: 0.6rem; white-space: pre-wrap; }
+  .error { border-left: 2px solid #f85149; color: #f85149; padding: 0.6rem 0.8rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid #21262d; }
+  th { color: #6e7681; font-weight: normal; }
+  .empty { color: #6e7681; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+  <h1>devops-multiagent</h1>
+  <div class="sub">Dashboard local · Diagnostician (solo lectura) + historial de auditoría de Proxmox</div>
+
+  <section>
+    <h2>Diagnostician</h2>
+    <form hx-get="/diagnose/start" hx-target="#trace-wrap" hx-swap="innerHTML">
+      <input type="text" name="message" placeholder="cuál es el estado del contenedor de nextcloud?" required autocomplete="off">
+      <button type="submit">Preguntar</button>
+    </form>
+    <div id="trace-wrap"></div>
+  </section>
+
+  <section>
+    <h2>Historial de auditoría (proxmox-mcp-server)</h2>
+    <div hx-get="/audit" hx-trigger="load, every 30s" hx-swap="innerHTML">
+      {% include "_audit.html" %}
+    </div>
+  </section>
+</body>
+</html>

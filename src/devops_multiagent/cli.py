@@ -23,7 +23,19 @@ def main() -> None:
 
     sub.add_parser("watch", help="Chequeo unico de estado (para systemd timer), notifica si hay cambios")
 
+    p_serve = sub.add_parser("serve", help="Dashboard web (FastAPI + htmx), solo localhost")
+    p_serve.add_argument("--port", type=int, default=8000)
+
     args = parser.parse_args()
+
+    if args.command == "serve":
+        import uvicorn
+
+        # Bind solo a localhost a proposito: no hay auth en el dashboard, y
+        # Diagnostician igual habla con infra real - mismo modelo de confianza
+        # que correr el CLI a mano, no pensado para exponerse en LAN/Tailscale.
+        uvicorn.run("devops_multiagent.web.app:app", host="127.0.0.1", port=args.port)
+        return
 
     async def run() -> None:
         if args.command == "diagnose":

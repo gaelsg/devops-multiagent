@@ -1,0 +1,5 @@
+<div hx-ext="sse" sse-connect="/diagnose/stream?message={{ message | urlencode }}" sse-close="close">
+  <div class="event tool-call"><span class="tool-name">&gt;</span> {{ message }}</div>
+  <div id="events" sse-swap="tool_call" hx-swap="beforeend"></div>
+  <div id="final" sse-swap="final" hx-swap="innerHTML"></div>
+</div>
