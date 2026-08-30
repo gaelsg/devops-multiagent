@@ -12,6 +12,7 @@ Fase 4 del roadmap de agentes, construido sobre [proxmox-mcp-server](https://git
 - **Operator:** puede ejecutar `start_resource`/`stop_resource`/`restart_resource`, pero solo si `approved=True` se pasó explícitamente al invocarlo. Sin aprobación, el modelo puede intentar la llamada (se le anuncia la tool) pero el `ToolRegistry` la bloquea antes de tocar Proxmox — el guardrail vive en código, no en el criterio del modelo.
 - **Watcher:** chequeo determinista de estado (sin LLM) cada 15 min via systemd timer. Solo si detecta un cambio real (no en cada poll) manda una alerta cruda a Telegram y despues invoca al Diagnostician para dar contexto.
 - **Dashboard:** FastAPI + htmx, solo localhost. Diagnostician con trace de tool-calls en vivo (SSE) + historial de auditoría. Ver sección propia más abajo.
+- **Webhook de Alertmanager:** servicio separado (`devops-agent webhook`, LAN, puerto 8090) que conecta [`observability`](https://github.com/gaelsg/observability) (Prometheus/Alertmanager) con el Diagnostician — una alerta real dispara una explicación en lenguaje natural por Telegram. Bind `0.0.0.0` a propósito, a diferencia del dashboard — ver su propia sección.
 
 ## Setup
 
@@ -31,6 +32,7 @@ uv run devops-agent operate "reinicia el contenedor 100"              # queda bl
 uv run devops-agent operate "reinicia el contenedor 100" --approve    # se ejecuta de verdad
 uv run devops-agent watch                                             # chequeo unico, notifica si hay cambios
 uv run devops-agent serve                                             # dashboard web, http://127.0.0.1:8000
+uv run devops-agent webhook                                           # receptor de Alertmanager, http://0.0.0.0:8090
 ```
 
 ## Dashboard web
@@ -43,6 +45,17 @@ FastAPI + htmx, sin build step ni frontend framework. Dos cosas:
 Solo expone Diagnostician (solo lectura) — no hay panel de Operator todavía, decisión deliberada para no sumar un botón de "reiniciar" en una UI sin autenticación. Ver [decisión completa](docs/bitacora/2026-08-29-idea4.md).
 
 **Bind solo a `127.0.0.1`, a propósito.** No tiene login: el modelo de confianza es el mismo que correr el CLI a mano en la propia máquina. No exponer en LAN/Tailscale sin agregar auth antes.
+
+## Webhook de Alertmanager (systemd --user, LAN)
+
+`src/devops_multiagent/webhook.py` — un único endpoint (`POST /webhook/alertmanager`), protegido por un shared secret (`WEBHOOK_SHARED_SECRET`, vive en Vault vía [`vault-secrets`](https://github.com/gaelsg/vault-secrets)) pasado como query param, más un chequeo de forma del payload (no cualquier POST dispara el Diagnostician). Bind `0.0.0.0` a propósito, a diferencia del dashboard — Alertmanager corre en otro LXC y necesita alcanzarlo por LAN. Requiere abrir el puerto en el firewall del host (`sudo ufw allow from 192.168.8.0/24 to any port 8090 proto tcp`).
+
+```bash
+mkdir -p ~/.config/systemd/user
+ln -sf ~/projects/devops-multiagent/systemd/devops-webhook.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now devops-webhook.service
+```
 
 ## Watcher proactivo (systemd --user timer)
 

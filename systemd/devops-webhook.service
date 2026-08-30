@@ -1,0 +1,13 @@
+[Unit]
+Description=devops-multiagent - receptor de webhooks de Alertmanager
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/devops-multiagent
+ExecStart=/usr/bin/uv run devops-agent webhook
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

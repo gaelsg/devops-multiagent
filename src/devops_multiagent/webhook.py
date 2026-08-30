@@ -1,0 +1,59 @@
+from __future__ import annotations
+
+import os
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, Query, Request
+
+from devops_multiagent import notify
+from devops_multiagent.diagnostician import diagnose
+
+app = FastAPI(title="devops-multiagent alertmanager webhook")
+
+WEBHOOK_SHARED_SECRET = os.environ.get("WEBHOOK_SHARED_SECRET", "")
+
+
+def _looks_like_alertmanager_payload(payload: Any) -> bool:
+    """Chequeo de forma, no autenticacion criptografica - Alertmanager no
+    firma sus webhooks nativamente. La defensa real es el shared secret en
+    la query string; esto solo descarta ruido que no tiene ni la forma
+    correcta antes de gastar una llamada al Diagnostician."""
+    return (
+        isinstance(payload, dict)
+        and isinstance(payload.get("alerts"), list)
+        and len(payload["alerts"]) > 0
+        and all("labels" in a and "status" in a for a in payload["alerts"])
+    )
+
+
+@app.post("/webhook/alertmanager")
+async def alertmanager_webhook(request: Request, token: str = Query(...)) -> dict[str, str]:
+    if not WEBHOOK_SHARED_SECRET or token != WEBHOOK_SHARED_SECRET:
+        raise HTTPException(status_code=403, detail="token invalido")
+
+    payload = await request.json()
+    if not _looks_like_alertmanager_payload(payload):
+        raise HTTPException(status_code=400, detail="payload no tiene forma de alerta de Alertmanager")
+
+    summaries = []
+    for alert in payload["alerts"]:
+        name = alert["labels"].get("alertname", "?")
+        status = alert["status"]
+        summary = alert.get("annotations", {}).get("summary", "")
+        summaries.append(f"{name} ({status}): {summary}")
+
+    alert_text = "; ".join(summaries)
+    notify.send_telegram(f"⚠️ *Alerta de Prometheus*\n\n{alert_text}")
+
+    try:
+        result, _ = await diagnose(
+            "Prometheus/Alertmanager dispararon esta alerta: "
+            + alert_text
+            + ". Da una explicacion breve de que podria significar y si amerita revisar algo, "
+            "basandote en el estado real de la infraestructura y la bitacora si es relevante."
+        )
+        notify.send_telegram(f"🔎 *Diagnostico*\n\n{result.final_text}")
+    except Exception as exc:  # noqa: BLE001 - la alerta cruda ya se mando, esto es best-effort
+        notify.send_telegram(f"🔎 *Diagnostico*: no se pudo generar ({type(exc).__name__})")
+
+    return {"status": "ok"}

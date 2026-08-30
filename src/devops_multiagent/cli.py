@@ -26,6 +26,11 @@ def main() -> None:
     p_serve = sub.add_parser("serve", help="Dashboard web (FastAPI + htmx), solo localhost")
     p_serve.add_argument("--port", type=int, default=8000)
 
+    p_webhook = sub.add_parser(
+        "webhook", help="Receptor de webhooks de Alertmanager (LAN, protegido por shared secret)"
+    )
+    p_webhook.add_argument("--port", type=int, default=8090)
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -35,6 +40,16 @@ def main() -> None:
         # Diagnostician igual habla con infra real - mismo modelo de confianza
         # que correr el CLI a mano, no pensado para exponerse en LAN/Tailscale.
         uvicorn.run("devops_multiagent.web.app:app", host="127.0.0.1", port=args.port)
+        return
+
+    if args.command == "webhook":
+        import uvicorn
+
+        # Bind 0.0.0.0 a proposito, a diferencia de "serve": Alertmanager
+        # corre en otro LXC y necesita alcanzar esto por LAN. Superficie
+        # angosta a cambio (un solo endpoint, protegido por shared secret,
+        # sin panel ni capacidad de escritura) - ver docs/29110 de observability.
+        uvicorn.run("devops_multiagent.webhook:app", host="0.0.0.0", port=args.port)
         return
 
     async def run() -> None:
