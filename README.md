@@ -22,8 +22,10 @@ Requiere `proxmox-mcp-server` y `rag-mcp-server` ya configurados (ver sus propio
 ```bash
 ollama pull qwen3:14b
 uv sync
-cp .env.example .env  # completar TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID si usas el watcher
+cp .env.example .env  # completar VAULT_ROLE_ID/VAULT_SECRET_ID (ver vault-secrets/scripts/onboard-devops-multiagent.sh)
 ```
+
+Los secretos reales (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `WEBHOOK_SHARED_SECRET`) viven en Vault (`secret/devops-multiagent`) desde la consolidación del portafolio, no en `.env` — mismo patrón que el resto del roadmap. `cli.py` carga Vault **antes** de importar `watcher`/`operator`/`diagnostician` (que a su vez importan `notify.py`, que lee esas variables al importarse, no de forma perezosa) — si se llama a `load_secrets_from_vault()` después de esos imports, quedan vacías para siempre en ese proceso.
 
 ## Uso
 

@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+from dotenv import load_dotenv
+
+from devops_multiagent.secrets_loader import load_secrets_from_vault
+
+# Tiene que correr ANTES de importar diagnostician/operator/watcher: esos
+# modulos importan notify.py, que lee TELEGRAM_* de os.environ en tiempo de
+# import (no perezoso) -- si Vault no puso las variables antes de esos
+# imports, notify.py se queda con valores vacios para siempre en este proceso.
+load_dotenv()
+load_secrets_from_vault()
+
 import argparse
 import asyncio
 import logging
