@@ -110,3 +110,7 @@ Dos capas:
 ## Nota conocida
 
 `qwen3:14b` (modelo híbrido de razonamiento) frecuentemente deja el campo `content` vacío y pone la respuesta final en `thinking` cuando no hay más tool-calls que hacer. `agent.py` hace fallback a `thinking` si `content` viene vacío — sin este fix, ~50-75% de las respuestas finales llegaban vacías pese a que el modelo sí había razonado la respuesta correcta.
+
+## Supply chain
+
+Ver [k8s-mcp-server](https://github.com/gaelsg/k8s-mcp-server#tracing) para el pipeline completo de build+scan+SBOM+firma (Idea 8).
