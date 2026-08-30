@@ -17,7 +17,7 @@ Agregar un pipeline de CI/CD real a `devops-multiagent`: gate de tests automáti
 **No incluye (fuera de alcance v1):**
 - Correr `evals/scenarios.py` (integración real contra Ollama + MCP servers) en CI — requeriría que el runner tenga acceso a los AppRoles de Vault de `proxmox-mcp-server`/`rag-mcp-server`, no resuelto todavía.
 - Replicar el pipeline en los otros repos del ecosistema — se documenta como patrón reusable, no se aplica todavía a los demás.
-- "Require approval for all outside collaborators" en Settings → Actions — recomendado antes de aceptar colaboradores externos, pero no aplicable hoy (repo de un solo mantenedor).
+- "Require approval for all outside collaborators" en Settings → Actions — investigado post-hoc (ver `docs/bitacora/2026-08-30-actions-permissions.md`): ese toggle no existe para repos de cuenta personal, solo para organizaciones. GitHub ya exige aprobación manual para el primer run de cualquier colaborador externo, sin poder configurarlo.
 
 ## Entregables
 1. `.github/workflows/ci.yml` + `.github/scripts/pr_review.py` en `devops-multiagent`.
