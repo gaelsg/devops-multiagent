@@ -81,7 +81,7 @@ Cada `diagnose`/`operate`/`watch`/webhook abre un span raíz; `ToolRegistry.call
 uv run devops-agent diagnose "..."
 ```
 
-UI de Jaeger: http://192.168.8.90:16686/. Backend en el LXC `observability` (ver [`observability`](https://github.com/gaelsg/observability)) — Jaeger v2, storage en memoria (los traces no sobreviven un restart del contenedor, aceptado como límite: son datos de diagnóstico más efímeros que métricas o secretos).
+UI de Jaeger: `curl -H "Host: jaeger.homelab.local" http://192.168.8.92/` (o configurar esa entrada DNS/hosts localmente). Desde la Idea 9, Jaeger corre en el cluster k3s (no ya en el LXC `observability`), gestionado por GitOps — ver [`observability`](https://github.com/gaelsg/observability#jaeger-sobre-k3s-gestionado-por-gitops-idea-9-post-roadmap). Storage en memoria (los traces no sobreviven un restart del pod, aceptado como límite: son datos de diagnóstico más efímeros que métricas o secretos).
 
 ## Watcher proactivo (systemd --user timer)
 
