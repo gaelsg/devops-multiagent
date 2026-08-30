@@ -4,11 +4,13 @@ import os
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from opentelemetry import trace
 
 from devops_multiagent import notify
 from devops_multiagent.diagnostician import diagnose
 
 app = FastAPI(title="devops-multiagent alertmanager webhook")
+_tracer = trace.get_tracer("devops-multiagent")
 
 WEBHOOK_SHARED_SECRET = os.environ.get("WEBHOOK_SHARED_SECRET", "")
 
@@ -28,6 +30,15 @@ def _looks_like_alertmanager_payload(payload: Any) -> bool:
 
 @app.post("/webhook/alertmanager")
 async def alertmanager_webhook(request: Request, token: str = Query(...)) -> dict[str, str]:
+    # Alertmanager no propaga contexto de trace -- este webhook siempre es
+    # una raiz nueva, igual que diagnose()/operate()/watch().
+    with _tracer.start_as_current_span(
+        "webhook.alertmanager", attributes={"gen_ai.operation.name": "webhook"}
+    ):
+        return await _handle_alertmanager_webhook(request, token)
+
+
+async def _handle_alertmanager_webhook(request: Request, token: str) -> dict[str, str]:
     if not WEBHOOK_SHARED_SECRET or token != WEBHOOK_SHARED_SECRET:
         raise HTTPException(status_code=403, detail="token invalido")
 

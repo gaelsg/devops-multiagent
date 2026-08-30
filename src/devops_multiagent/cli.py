@@ -3,6 +3,7 @@ from __future__ import annotations
 from dotenv import load_dotenv
 
 from devops_multiagent.secrets_loader import load_secrets_from_vault
+from devops_multiagent.tracing import configure_tracing
 
 # Tiene que correr ANTES de importar diagnostician/operator/watcher: esos
 # modulos importan notify.py, que lee TELEGRAM_* de os.environ en tiempo de
@@ -10,6 +11,7 @@ from devops_multiagent.secrets_loader import load_secrets_from_vault
 # imports, notify.py se queda con valores vacios para siempre en este proceso.
 load_dotenv()
 load_secrets_from_vault()
+configure_tracing("devops-multiagent")
 
 import argparse
 import asyncio

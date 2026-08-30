@@ -6,6 +6,13 @@ from typing import Any, Callable
 
 from mcp import StdioServerParameters
 from mcp.client import Client
+from opentelemetry import propagate, trace
+
+# mcp.shared._otel.inject_trace_context existe pero es una API privada del
+# SDK (guion bajo) -- es un wrapper de una linea sobre propagate.inject(),
+# asi que se llama directo a la funcion publica de OTel en vez de depender
+# de un modulo interno que puede cambiar sin aviso entre versiones.
+_tracer = trace.get_tracer("devops-multiagent")
 
 
 @dataclass
@@ -83,7 +90,17 @@ class ToolRegistry:
             return result
 
         client = self._tool_to_client[name]
-        call_result = await client.call_tool(name, arguments)
+        with _tracer.start_as_current_span(
+            f"tool_call {name}",
+            attributes={"gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": name},
+        ):
+            # El servidor MCP extrae el traceparent del _meta de la request
+            # y lo usa como padre de su propio span (mcp.server._otel,
+            # embebido en el SDK) -- este inject() es la unica pieza que el
+            # SDK no hace solo, del lado cliente.
+            meta: dict[str, Any] = {}
+            propagate.inject(meta)
+            call_result = await client.call_tool(name, arguments, meta=meta)
         if call_result.structured_content is not None:
             value: Any = call_result.structured_content
             # El SDK envuelve retornos no-objeto (ej. list[dict]) en {"result": ...}

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 import requests
+from opentelemetry import trace
 
 from devops_multiagent.mcp_tools import ToolRegistry
 
@@ -15,6 +16,8 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 MODEL = os.environ.get("AGENT_MODEL", "qwen3:14b")
 MAX_TURNS = 6
 
+_tracer = trace.get_tracer("devops-multiagent")
+
 
 @dataclass
 class AgentResult:
@@ -23,13 +26,29 @@ class AgentResult:
 
 
 def _chat(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
-    resp = requests.post(
-        f"{OLLAMA_HOST}/api/chat",
-        json={"model": MODEL, "messages": messages, "tools": tools, "stream": False},
-        timeout=120,
-    )
-    resp.raise_for_status()
-    return resp.json()["message"]
+    # Mismas convenciones semanticas gen_ai.* que usa el middleware de
+    # OpenTelemetry embebido en el SDK de MCP para las tool calls -- un
+    # solo vocabulario de atributos en todo el trace, no dos.
+    with _tracer.start_as_current_span(
+        "ollama.chat",
+        attributes={
+            "gen_ai.system": "ollama",
+            "gen_ai.request.model": MODEL,
+            "gen_ai.operation.name": "chat",
+        },
+    ) as span:
+        resp = requests.post(
+            f"{OLLAMA_HOST}/api/chat",
+            json={"model": MODEL, "messages": messages, "tools": tools, "stream": False},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "eval_count" in data:
+            span.set_attribute("gen_ai.usage.output_tokens", data["eval_count"])
+        if "prompt_eval_count" in data:
+            span.set_attribute("gen_ai.usage.input_tokens", data["prompt_eval_count"])
+        return data["message"]
 
 
 async def run_agent(

@@ -14,6 +14,7 @@ Fase 4 del roadmap de agentes, construido sobre [proxmox-mcp-server](https://git
 - **Dashboard:** FastAPI + htmx, solo localhost. Diagnostician con trace de tool-calls en vivo (SSE) + historial de auditoría. Ver sección propia más abajo.
 - **Webhook de Alertmanager:** servicio separado (`devops-agent webhook`, LAN, puerto 8090) que conecta [`observability`](https://github.com/gaelsg/observability) (Prometheus/Alertmanager) con el Diagnostician — una alerta real dispara una explicación en lenguaje natural por Telegram. Bind `0.0.0.0` a propósito, a diferencia del dashboard — ver su propia sección.
 - **CI/CD:** GitHub Actions con runner self-hosted en la workstation. Cada PR corre los unit tests del guardrail y un review automático de IA (mismo `qwen3:14b` local). Ver sección propia más abajo.
+- **Tracing distribuido:** cada consulta genera un solo trace (OpenTelemetry) que cruza los 3 servidores MCP y cada llamada a Ollama, visible en Jaeger. Ver sección propia más abajo.
 
 ## Setup
 
@@ -70,6 +71,17 @@ systemctl --user enable --now devops-webhook.service
 **Por qué self-hosted y no runners de GitHub:** sigue la filosofía "100% local y gratis" del proyecto — el review usa el mismo modelo que ya corre en la RTX 5080, sin pagar una API externa. El costo es que el runner tiene que estar prendido para que el CI corra.
 
 **Riesgo de seguridad documentado:** un runner self-hosted en un repo público ejecuta código arbitrario de cualquier PR que dispare el workflow — si algún día este repo acepta PRs externas, un fork podría lograr RCE en la workstation. Mitigación aplicada: ambos jobs tienen `if: github.event.pull_request.head.repo.full_name == github.repository` (solo corren en PRs del mismo repo, nunca de forks). El toggle granular "Require approval for all outside collaborators" (Settings → Actions) **no existe para repos de cuenta personal** — solo está disponible en repos de una organización de GitHub (confirmado vía API: `gh api repos/gaelsg/devops-multiagent/actions/permissions` no expone ese campo). En su lugar, GitHub ya exige aprobación manual para el primer workflow run de cualquier colaborador externo en un repo público de cuenta personal, sin posibilidad de ajustarlo — es la protección real vigente hoy, sumada al `if` del workflow.
+
+## Tracing distribuido (OpenTelemetry + Jaeger)
+
+Cada `diagnose`/`operate`/`watch`/webhook abre un span raíz; `ToolRegistry.call()` propaga ese contexto a cada servidor MCP via el campo `_meta` del protocolo (`meta={"traceparent": ...}`). **No hizo falta instrumentar cada tool a mano** — el SDK de MCP ya trae un middleware de OpenTelemetry embebido que envuelve cada `tools/call` en un span y extrae el `traceparent` automáticamente. Las llamadas a Ollama (`ollama.chat` en este repo, `ollama.embed` en `rag-mcp-server`) usan las mismas convenciones semánticas `gen_ai.*` que el middleware del SDK — un solo vocabulario de atributos en todo el trace.
+
+```bash
+# En .env: OTEL_EXPORTER_OTLP_ENDPOINT=http://192.168.8.90:4317 (opcional -- sin esto, tracing no hace nada)
+uv run devops-agent diagnose "..."
+```
+
+UI de Jaeger: http://192.168.8.90:16686/. Backend en el LXC `observability` (ver [`observability`](https://github.com/gaelsg/observability)) — Jaeger v2, storage en memoria (los traces no sobreviven un restart del contenedor, aceptado como límite: son datos de diagnóstico más efímeros que métricas o secretos).
 
 ## Watcher proactivo (systemd --user timer)
 

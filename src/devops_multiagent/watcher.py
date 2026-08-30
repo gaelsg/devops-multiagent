@@ -5,9 +5,13 @@ import os
 from pathlib import Path
 from typing import Any
 
+from opentelemetry import trace
+
 from devops_multiagent import notify
 from devops_multiagent.diagnostician import PROXMOX_SERVER, _diagnostician_gate, diagnose
 from devops_multiagent.mcp_tools import ToolRegistry
+
+_tracer = trace.get_tracer("devops-multiagent")
 
 NODE = os.environ.get("WATCHER_NODE", "batman01")
 STATE_PATH = Path(
@@ -56,32 +60,35 @@ async def check_once() -> list[str]:
     Primera corrida (sin estado previo): guarda la linea base sin notificar,
     para no disparar una alerta falsa de "todo acaba de aparecer".
     """
-    current = await _snapshot()
+    with _tracer.start_as_current_span(
+        "watch.check_once", attributes={"gen_ai.operation.name": "watch"}
+    ):
+        current = await _snapshot()
 
-    if not STATE_PATH.exists():
-        STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if not STATE_PATH.exists():
+            STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            STATE_PATH.write_text(json.dumps(current, indent=2))
+            return []
+
+        previous = json.loads(STATE_PATH.read_text())
+        changes = _diff(previous, current)
+
         STATE_PATH.write_text(json.dumps(current, indent=2))
-        return []
 
-    previous = json.loads(STATE_PATH.read_text())
-    changes = _diff(previous, current)
+        if changes:
+            raw = "\n".join(changes)
+            notify.send_telegram(f"⚠️ *Cambio detectado en {NODE}*\n\n{raw}")
 
-    STATE_PATH.write_text(json.dumps(current, indent=2))
+            try:
+                result, _ = await diagnose(
+                    f"En el nodo Proxmox '{NODE}' se detectaron estos cambios de estado: "
+                    + "; ".join(changes)
+                    + ". Da una explicacion breve de que podria significar y si amerita revisar algo, "
+                    "basandote en la bitacora si es relevante. Si necesitas consultar el estado actual, "
+                    f"usa siempre node='{NODE}', no inventes otro nombre de nodo."
+                )
+                notify.send_telegram(f"🔎 *Diagnostico*\n\n{result.final_text}")
+            except Exception as exc:  # noqa: BLE001 - la alerta cruda ya se envio, esto es best-effort
+                notify.send_telegram(f"🔎 *Diagnostico*: no se pudo generar ({type(exc).__name__})")
 
-    if changes:
-        raw = "\n".join(changes)
-        notify.send_telegram(f"⚠️ *Cambio detectado en {NODE}*\n\n{raw}")
-
-        try:
-            result, _ = await diagnose(
-                f"En el nodo Proxmox '{NODE}' se detectaron estos cambios de estado: "
-                + "; ".join(changes)
-                + ". Da una explicacion breve de que podria significar y si amerita revisar algo, "
-                "basandote en la bitacora si es relevante. Si necesitas consultar el estado actual, "
-                f"usa siempre node='{NODE}', no inventes otro nombre de nodo."
-            )
-            notify.send_telegram(f"🔎 *Diagnostico*\n\n{result.final_text}")
-        except Exception as exc:  # noqa: BLE001 - la alerta cruda ya se envio, esto es best-effort
-            notify.send_telegram(f"🔎 *Diagnostico*: no se pudo generar ({type(exc).__name__})")
-
-    return changes
+        return changes
