@@ -18,11 +18,19 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Instalar uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
       - name: Sincronizar dependencias
         run: uv sync
+      - name: Trivy -- dependencias (SCA sobre uv.lock)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: uv.lock
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
       - name: Unit tests del guardrail (sin red ni LLM)
         run: uv run python evals/gate_unit_tests.py
 
@@ -34,7 +42,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Instalar uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
       - name: Sincronizar dependencias
