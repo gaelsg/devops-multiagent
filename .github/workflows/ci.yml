@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # Self-hosted: ejecuta codigo del PR. Restringido a PRs del mismo repo
+    # (no forks) para no dar RCE en el runner via un PR malicioso.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Sincronizar dependencias
+        run: uv sync
+      - name: Unit tests del guardrail (sin red ni LLM)
+        run: uv run python evals/gate_unit_tests.py
+
+  ai-review:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    needs: test
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Sincronizar dependencias
+        run: uv sync
+      - name: Review de IA (qwen3:14b local via Ollama)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: uv run python .github/scripts/pr_review.py
