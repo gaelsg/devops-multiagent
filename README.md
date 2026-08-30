@@ -2,13 +2,13 @@
 
 Sistema multi-agente sobre infraestructura propia (Proxmox VE), corriendo 100% local y gratis: modelo de tool-calling vía Ollama, dos agentes especializados con separación de privilegios, y una suite de evals que verifica el comportamiento con aserciones deterministas sobre el trace de tool-calls — no "se ve bien en la demo", sino "hicimos exactamente las llamadas correctas, con los guardrails correctos".
 
-Fase 4 del roadmap de agentes, construido sobre [proxmox-mcp-server](https://github.com/gaelsg/proxmox-mcp-server) y [rag-mcp-server](https://github.com/gaelsg/rag-mcp-server).
+Fase 4 del roadmap de agentes, construido sobre [proxmox-mcp-server](https://github.com/gaelsg/proxmox-mcp-server), [rag-mcp-server](https://github.com/gaelsg/rag-mcp-server) y [k8s-mcp-server](https://github.com/gaelsg/k8s-mcp-server).
 
 ## Arquitectura
 
 - **Modelo:** `qwen3:14b` vía Ollama, local, en la RTX 5080. Elegido sobre DeepSeek-R1-distill por soporte de tool-calling estructurado más maduro en Ollama.
-- **Cliente MCP real:** este proyecto no es un servidor MCP — es un *host/cliente* que habla el protocolo MCP contra `proxmox-mcp-server` y `rag-mcp-server` como subprocesos, usando el SDK oficial (`mcp.client.Client`).
-- **Diagnostician:** solo lectura. Las tools de escritura ni siquiera se le anuncian al modelo (filtradas en `ToolRegistry.connect`, no solo bloqueadas).
+- **Cliente MCP real:** este proyecto no es un servidor MCP — es un *host/cliente* que habla el protocolo MCP contra `proxmox-mcp-server`, `rag-mcp-server` y `k8s-mcp-server` como subprocesos, usando el SDK oficial (`mcp.client.Client`).
+- **Diagnostician:** solo lectura. Las tools de escritura ni siquiera se le anuncian al modelo (filtradas en `ToolRegistry.connect`, no solo bloqueadas). Desde la Idea 6 del segundo roadmap, también lee el cluster de Kubernetes (`k3s`) via `k8s-mcp-server` — tools con prefijo `k8s_` para no chocar con las de Proxmox.
 - **Operator:** puede ejecutar `start_resource`/`stop_resource`/`restart_resource`, pero solo si `approved=True` se pasó explícitamente al invocarlo. Sin aprobación, el modelo puede intentar la llamada (se le anuncia la tool) pero el `ToolRegistry` la bloquea antes de tocar Proxmox — el guardrail vive en código, no en el criterio del modelo.
 - **Watcher:** chequeo determinista de estado (sin LLM) cada 15 min via systemd timer. Solo si detecta un cambio real (no en cada poll) manda una alerta cruda a Telegram y despues invoca al Diagnostician para dar contexto.
 - **Dashboard:** FastAPI + htmx, solo localhost. Diagnostician con trace de tool-calls en vivo (SSE) + historial de auditoría. Ver sección propia más abajo.
