@@ -13,6 +13,7 @@ Fase 4 del roadmap de agentes, construido sobre [proxmox-mcp-server](https://git
 - **Watcher:** chequeo determinista de estado (sin LLM) cada 15 min via systemd timer. Solo si detecta un cambio real (no en cada poll) manda una alerta cruda a Telegram y despues invoca al Diagnostician para dar contexto.
 - **Dashboard:** FastAPI + htmx, solo localhost. Diagnostician con trace de tool-calls en vivo (SSE) + historial de auditoría. Ver sección propia más abajo.
 - **Webhook de Alertmanager:** servicio separado (`devops-agent webhook`, LAN, puerto 8090) que conecta [`observability`](https://github.com/gaelsg/observability) (Prometheus/Alertmanager) con el Diagnostician — una alerta real dispara una explicación en lenguaje natural por Telegram. Bind `0.0.0.0` a propósito, a diferencia del dashboard — ver su propia sección.
+- **CI/CD:** GitHub Actions con runner self-hosted en la workstation. Cada PR corre los unit tests del guardrail y un review automático de IA (mismo `qwen3:14b` local). Ver sección propia más abajo.
 
 ## Setup
 
@@ -56,6 +57,17 @@ ln -sf ~/projects/devops-multiagent/systemd/devops-webhook.service ~/.config/sys
 systemctl --user daemon-reload
 systemctl --user enable --now devops-webhook.service
 ```
+
+## CI/CD (GitHub Actions, runner self-hosted)
+
+`.github/workflows/ci.yml` corre en cada PR contra este repo, en un runner self-hosted registrado en la workstation (systemd, `sudo ./svc.sh install/start` — sobrevive reboot). Dos jobs:
+
+- **`test`:** `evals/gate_unit_tests.py` — solo la lógica del guardrail, sin red ni LLM, instantáneo.
+- **`ai-review`:** `.github/scripts/pr_review.py` — le pasa el diff de la PR al mismo `qwen3:14b` local (vía Ollama, `localhost:11434`) con un prompt de revisor senior, y postea el resultado como comentario en la PR (`gh pr comment`). **Es advisorio, nunca bloquea el merge** — mismo principio que el Operator: la IA sugiere, un humano decide.
+
+**Por qué self-hosted y no runners de GitHub:** sigue la filosofía "100% local y gratis" del proyecto — el review usa el mismo modelo que ya corre en la RTX 5080, sin pagar una API externa. El costo es que el runner tiene que estar prendido para que el CI corra.
+
+**Riesgo de seguridad documentado:** un runner self-hosted en un repo público ejecuta código arbitrario de cualquier PR que dispare el workflow — si algún día este repo acepta PRs externas, un fork podría lograr RCE en la workstation. Mitigación aplicada: ambos jobs tienen `if: github.event.pull_request.head.repo.full_name == github.repository` (solo corren en PRs del mismo repo, nunca de forks). Antes de aceptar colaboradores externos, además hay que activar "Require approval for all outside collaborators" en Settings → Actions.
 
 ## Watcher proactivo (systemd --user timer)
 
