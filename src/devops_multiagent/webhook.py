@@ -82,10 +82,9 @@ async def _handle_alertmanager_webhook(request: Request, token: str) -> dict[str
     return {"status": "ok"}
 
 
-# Solo el evento "issue" por ahora (create/update/delete) -- alcance acotado
-# a proposito, ver docs/bitacora/. Plane no soporta webhooks para Pages en
-# esta version, asi que ese contenido queda para un poller periodico futuro,
-# no para este endpoint.
+# "issue" e "issue_comment" (create/update/delete) -- Plane no soporta
+# webhooks para Pages en esta version, ese contenido queda para un poller
+# periodico futuro, no para este endpoint. Ver docs/bitacora/.
 @app.post("/webhook/plane")
 async def plane_webhook(request: Request) -> dict[str, str]:
     with _tracer.start_as_current_span("webhook.plane", attributes={"gen_ai.operation.name": "webhook"}):
@@ -100,16 +99,20 @@ async def _handle_plane_webhook(request: Request) -> dict[str, str]:
 
     payload = await request.json()
     event = payload.get("event")
-    if event != "issue":
+    if event not in ("issue", "issue_comment"):
         return {"status": "ignored", "event": str(event)}
 
     action = payload.get("action", "")
     data = payload.get("data") or {}
     workspace_slug = payload.get("workspace_slug", "")
 
-    path = plane_sync.sync_issue(workspace_slug, action, data)
+    if event == "issue":
+        path = plane_sync.sync_issue(workspace_slug, action, data)
+    else:
+        path = plane_sync.sync_comment(workspace_slug, action, data)
+
     if path is None:
-        return {"status": "skipped", "reason": "sin sequence_id"}
+        return {"status": "skipped", "reason": "sin id/sequence_id reconocible"}
 
     try:
         await plane_sync.trigger_reindex()
