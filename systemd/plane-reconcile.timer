@@ -1,0 +1,9 @@
+[Unit]
+Description=Corre plane-reconcile.service una vez al dia
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -3,12 +3,17 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
+
+import requests
 
 from devops_multiagent.diagnostician import RAG_SERVER
 from devops_multiagent.mcp_tools import ToolRegistry
+
+PLANE_HOST = os.environ.get("PLANE_HOST", "http://192.168.8.93")
 
 # Un archivo .md por issue, nombrado por sequence_id (numero corto y
 # estable dentro del proyecto, no el UUID) -- se sobreescribe en cada
@@ -158,6 +163,66 @@ def sync_comment(workspace_slug: str, action: str, data: dict[str, Any]) -> Path
     index[comment_id] = filename
     _save_index(index)
     return path
+
+
+def _paginated_get(url: str, headers: dict[str, str]) -> Iterator[dict[str, Any]]:
+    params: dict[str, str] = {}
+    while True:
+        resp = requests.get(url, headers=headers, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        yield from data.get("results", [])
+        if not data.get("next_page_results"):
+            return
+        params["cursor"] = data["next_cursor"]
+
+
+def reconcile() -> dict[str, Any]:
+    """Compara el estado real de Plane (todos los proyectos del workspace,
+    no solo "Documentacion" -- el webhook es a nivel workspace) contra el
+    indice local, y borra del corpus lo que ya no existe en Plane. Pensado
+    para correr periodicamente (systemd timer), no en cada webhook -- Plane
+    nunca avisa via webhook cuando se borra un issue o un comentario
+    (verificado dos veces, ver docs/bitacora/), asi que esta es la unica
+    forma de que el RAG no acumule contenido fantasma indefinidamente.
+    Requiere PLANE_API_TOKEN/PLANE_WORKSPACE_SLUG en el entorno (ver
+    secrets_loader.load_plane_secrets_from_vault)."""
+    token = os.environ["PLANE_API_TOKEN"]
+    slug = os.environ["PLANE_WORKSPACE_SLUG"]
+    headers = {"x-api-key": token}
+
+    live_ids: set[str] = set()
+    projects = list(_paginated_get(f"{PLANE_HOST}/api/v1/workspaces/{slug}/projects/", headers))
+    for project in projects:
+        project_id = project["id"]
+        issues = list(
+            _paginated_get(f"{PLANE_HOST}/api/v1/workspaces/{slug}/projects/{project_id}/issues/", headers)
+        )
+        for issue in issues:
+            live_ids.add(issue["id"])
+            comments = _paginated_get(
+                f"{PLANE_HOST}/api/v1/workspaces/{slug}/projects/{project_id}"
+                f"/work-items/{issue['id']}/comments/",
+                headers,
+            )
+            for comment in comments:
+                live_ids.add(comment["id"])
+
+    index = _load_index()
+    stale_ids = [id_ for id_ in index if id_ != "_counter" and id_ not in live_ids]
+
+    removed: list[str] = []
+    for id_ in stale_ids:
+        filename = index.pop(id_)
+        path = CORPUS_DIR / filename
+        if path.is_file():
+            path.unlink()
+            removed.append(filename)
+
+    if stale_ids:
+        _save_index(index)
+
+    return {"projects": len(projects), "live_ids": len(live_ids), "removed": removed}
 
 
 async def trigger_reindex() -> dict[str, Any]:

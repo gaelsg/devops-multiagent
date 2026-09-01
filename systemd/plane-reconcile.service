@@ -1,0 +1,7 @@
+[Unit]
+Description=Limpia del RAG issues/comentarios de Plane ya borrados
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/devops-multiagent
+ExecStart=/usr/bin/uv run devops-agent plane-reconcile

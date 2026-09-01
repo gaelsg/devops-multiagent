@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dotenv import load_dotenv
 
-from devops_multiagent.secrets_loader import load_secrets_from_vault
+from devops_multiagent.secrets_loader import load_plane_secrets_from_vault, load_secrets_from_vault
 from devops_multiagent.tracing import configure_tracing
 
 # Tiene que correr ANTES de importar diagnostician/operator/watcher: esos
@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import logging
 
+from devops_multiagent import plane_sync
 from devops_multiagent.diagnostician import diagnose
 from devops_multiagent.operator import operate
 from devops_multiagent.watcher import check_once
@@ -44,6 +45,11 @@ def main() -> None:
     )
     p_webhook.add_argument("--port", type=int, default=8090)
 
+    sub.add_parser(
+        "plane-reconcile",
+        help="Limpia del RAG issues/comentarios de Plane ya borrados (Plane no avisa via webhook)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -63,6 +69,27 @@ def main() -> None:
         # angosta a cambio (un solo endpoint, protegido por shared secret,
         # sin panel ni capacidad de escritura) - ver docs/29110 de observability.
         uvicorn.run("devops_multiagent.webhook:app", host="0.0.0.0", port=args.port)
+        return
+
+    if args.command == "plane-reconcile":
+        # Solo este subcomando necesita hablarle a la API de Plane -- se
+        # carga aca, no al arrancar el proceso, para no pedirle el AppRole
+        # `plane` a comandos que no lo necesitan (diagnose/operate/watch).
+        load_plane_secrets_from_vault()
+        result = plane_sync.reconcile()
+        print(f"proyectos revisados: {result['projects']}, ids vivos en Plane: {result['live_ids']}")
+        if result["removed"]:
+            print(f"borrados del corpus ({len(result['removed'])}):")
+            for filename in result["removed"]:
+                print(f"  - {filename}")
+
+            async def reindex() -> None:
+                await plane_sync.trigger_reindex()
+
+            asyncio.run(reindex())
+            print("RAG reindexado.")
+        else:
+            print("nada para borrar, el corpus ya coincide con Plane.")
         return
 
     async def run() -> None:

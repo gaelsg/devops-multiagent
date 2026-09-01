@@ -75,6 +75,13 @@ archivo ignorado por el indexador, delete de issues/comentarios que Plane nunca 
 `comment_stripped` ausente del payload de comentarios) documentados en
 `docs/bitacora/2026-09-01-plane-webhook.md` y `docs/bitacora/2026-09-01-plane-comentarios.md`.
 
+**Reconciliador diario** (`devops-agent plane-reconcile`, `systemd/plane-reconcile.timer`): como
+Plane nunca avisa vía webhook cuando se borra un issue o un comentario, este timer diario recorre
+todos los proyectos del workspace, compara contra el corpus local, y borra lo que ya no existe en
+Plane (reindexando solo si borró algo). Credenciales propias (`PLANE_VAULT_ROLE_ID`/
+`PLANE_VAULT_SECRET_ID`, mismo AppRole `plane` de solo lectura), cargadas solo para este
+subcomando. Ver `docs/bitacora/2026-09-01-plane-reconciliador.md`.
+
 ## CI/CD (GitHub Actions, runner self-hosted)
 
 `.github/workflows/ci.yml` corre en cada PR contra este repo, en un runner self-hosted registrado en la workstation (systemd, `sudo ./svc.sh install/start` — sobrevive reboot). Dos jobs:
