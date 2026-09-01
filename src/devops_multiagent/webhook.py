@@ -6,13 +6,14 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Query, Request
 from opentelemetry import trace
 
-from devops_multiagent import notify
+from devops_multiagent import notify, plane_sync
 from devops_multiagent.diagnostician import diagnose
 
 app = FastAPI(title="devops-multiagent alertmanager webhook")
 _tracer = trace.get_tracer("devops-multiagent")
 
 WEBHOOK_SHARED_SECRET = os.environ.get("WEBHOOK_SHARED_SECRET", "")
+PLANE_WEBHOOK_SECRET = os.environ.get("PLANE_WEBHOOK_SECRET", "")
 
 
 def _looks_like_alertmanager_payload(payload: Any) -> bool:
@@ -79,3 +80,40 @@ async def _handle_alertmanager_webhook(request: Request, token: str) -> dict[str
             notify.send_telegram(f"🔎 *Diagnostico*: no se pudo generar ({type(exc).__name__})")
 
     return {"status": "ok"}
+
+
+# Solo el evento "issue" por ahora (create/update/delete) -- alcance acotado
+# a proposito, ver docs/bitacora/. Plane no soporta webhooks para Pages en
+# esta version, asi que ese contenido queda para un poller periodico futuro,
+# no para este endpoint.
+@app.post("/webhook/plane")
+async def plane_webhook(request: Request) -> dict[str, str]:
+    with _tracer.start_as_current_span("webhook.plane", attributes={"gen_ai.operation.name": "webhook"}):
+        return await _handle_plane_webhook(request)
+
+
+async def _handle_plane_webhook(request: Request) -> dict[str, str]:
+    raw_body = await request.body()
+    signature = request.headers.get("x-plane-signature", "")
+    if not plane_sync.verify_signature(PLANE_WEBHOOK_SECRET, raw_body, signature):
+        raise HTTPException(status_code=403, detail="firma invalida")
+
+    payload = await request.json()
+    event = payload.get("event")
+    if event != "issue":
+        return {"status": "ignored", "event": str(event)}
+
+    action = payload.get("action", "")
+    data = payload.get("data") or {}
+    workspace_slug = payload.get("workspace_slug", "")
+
+    path = plane_sync.sync_issue(workspace_slug, action, data)
+    if path is None:
+        return {"status": "skipped", "reason": "sin sequence_id"}
+
+    try:
+        await plane_sync.trigger_reindex()
+    except Exception as exc:  # noqa: BLE001 - el archivo ya quedo escrito, el reindex es best-effort
+        return {"status": "synced_no_reindex", "error": f"{type(exc).__name__}: {exc}"}
+
+    return {"status": "ok", "action": action, "file": str(path)}

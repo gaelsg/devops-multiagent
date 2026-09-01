@@ -61,6 +61,19 @@ systemctl --user daemon-reload
 systemctl --user enable --now devops-webhook.service
 ```
 
+## Webhook de Plane → RAG (mismo servicio, puerto 8090)
+
+`POST /webhook/plane` — cuando se crea/actualiza un *issue* en [Plane](http://192.168.8.93)
+(gestión de proyectos del track de automatización, ver `proxmox-iac`), este endpoint valida la
+firma `X-Plane-Signature` (HMAC-SHA256, secreto `PLANE_WEBHOOK_SECRET` vía Vault), sincroniza el
+contenido a un `.md` en `rag-mcp-server/docs/plane-sync/` y dispara `index_corpus()` en
+`rag-mcp-server` vía el mismo `ToolRegistry` que usa el Diagnostician — Plane pasa a ser una
+fuente más del corpus, sin pipeline de indexado nuevo. Solo el evento `issue` por ahora (no
+comentarios). Requiere que la URL destino esté en `WEBHOOK_ALLOWED_IPS` de Plane (protección SSRF
+real contra IPs privadas por defecto). Tres incidentes reales (SSRF, naming del archivo ignorado
+por el indexador, delete de issues que Plane nunca llega a enviar) documentados en
+`docs/bitacora/2026-09-01-plane-webhook.md`.
+
 ## CI/CD (GitHub Actions, runner self-hosted)
 
 `.github/workflows/ci.yml` corre en cada PR contra este repo, en un runner self-hosted registrado en la workstation (systemd, `sudo ./svc.sh install/start` — sobrevive reboot). Dos jobs:
