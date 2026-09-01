@@ -26,8 +26,21 @@ delete) antes de tocar el servicio en vivo. Índice local reconstruido desde el 
 Plane (se había perdido en una limpieza de archivos de prueba) consultando la API en vez de
 asumirlo.
 
-## Pendiente de verificar
+## Incidente real: `comment_stripped` no viene en el payload
 
-No se confirmó si Plane envía webhook de *delete* para comentarios (solo se confirmó, en la
-integración anterior, que NO lo hace para issues) -- el manejo de delete queda implementado
-igual, por si acaso.
+Primer test end-to-end (comentario real vía API): el archivo se sincronizó con el contexto
+correcto ("Comentario en: <issue>") pero el contenido quedó vacío. Depurado con un dump temporal
+del payload crudo: a diferencia de un issue (que sí trae `description_stripped` calculado), el
+payload de `issue_comment` **no incluye `comment_stripped` en absoluto** -- solo `comment_html`.
+El modelo `IssueComment.save()` sí calcula `comment_stripped` server-side (`strip_tags`), pero el
+serializer del webhook no lo expone. Corregido derivándolo del lado de `pm-agent`/
+`devops-multiagent` con un `re.sub("<[^>]+>", "", html)` propio -- no se sumó una dependencia de
+parsing HTML para algo tan simple. Reprobado: contenido correcto, verificado además con búsqueda
+semántica real (top resultado para una consulta sobre el contenido del comentario).
+
+## Confirmado: tampoco hay webhook de delete para comentarios
+
+Se crearon y luego se borraron dos comentarios de prueba reales vía API -- ninguno de los dos
+delete disparó el webhook (mismo patrón ya confirmado para issues, ahora verificado también para
+`issue_comment`, no solo asumido por analogía). Los archivos huérfanos quedaron hasta la limpieza
+manual de esta sesión.

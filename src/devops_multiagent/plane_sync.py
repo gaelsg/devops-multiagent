@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,16 @@ CORPUS_DIR = Path.home() / "projects" / "rag-mcp-server" / "docs" / "plane-sync"
 # (issue_comment) por separado -- asumido igual hasta ver lo contrario.
 # Ver docs/bitacora/.
 _INDEX_PATH = CORPUS_DIR / "_index.json"
+
+
+def _strip_html(text: str) -> str:
+    # El payload de "issue_comment" trae comment_html pero, a diferencia de
+    # los issues, NO trae comment_stripped ya calculado (verificado con el
+    # payload real -- el campo simplemente no esta en el serializer de
+    # comentarios) -- se deriva aca con el mismo criterio que usa Plane
+    # server-side (strip_tags), sin sumar una dependencia de parsing HTML
+    # para algo tan simple.
+    return re.sub(r"<[^>]+>", "", text).strip()
 
 
 def verify_signature(secret: str, raw_body: bytes, signature: str) -> bool:
@@ -128,7 +139,7 @@ def sync_comment(workspace_slug: str, action: str, data: dict[str, Any]) -> Path
         filename = f"{counter}-{workspace_slug}-comentario.md"
 
     path = CORPUS_DIR / filename
-    comment_text = data.get("comment_stripped") or "(sin contenido)"
+    comment_text = data.get("comment_stripped") or _strip_html(data.get("comment_html", "")) or "(sin contenido)"
 
     # Da contexto legible del issue padre si ya esta sincronizado (mismo
     # indice, la entrada del issue guarda su propio archivo -- se lee su
